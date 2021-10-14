@@ -14,13 +14,15 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // 先并发上传20张图片到图片服务器,全部返回url后再发布朋友圈, 使用5中方式发送
+        // 先并发上传20张图片到图片服务器,全部返回url后再发布朋友圈, 使用6种方式发送
         
         //publishByGCDGroup()
         
         //publishByOperation()
-       
-        publishBySemaphore()
+        
+        //publishBySemaphore()
+        
+        publishByGDCBarrier()
         
         //publishByPromise()
         
@@ -31,7 +33,6 @@ class ViewController: UIViewController {
     func publishByGCDGroup(){
         var imageUrls:[String?] = images.map { _ in nil }
         let lock = NSLock()
-        
         
         let group = DispatchGroup()
         
@@ -53,6 +54,76 @@ class ViewController: UIViewController {
                 }
             }
         }
+    }
+    
+    func publishByOperation(){
+        var imageUrls:[String?] = images.map { _ in nil }
+        let lock = NSLock()
+        
+        
+        let queue = OperationQueue()
+        queue.maxConcurrentOperationCount = 5
+        
+        let publishOperation = BlockOperation {
+            print("图片上传完毕")
+            publish(imageUrls: imageUrls.compactMap{$0}, text: "hello") { ret in
+                if ret{
+                    print("朋友圈发布成功!!")
+                }
+            }
+        }
+        
+        for (idx, img) in images.enumerated() {
+            
+            let uploadOperation = BlockOperation {
+                
+                let sem = DispatchSemaphore(value: 0)
+                upload(image: img, index: idx) { url in
+                    lock.lock()
+                    imageUrls[idx] = url
+                    lock.unlock()
+                    sem.signal()
+                }
+                sem.wait()
+                
+            }
+            
+            publishOperation.addDependency(uploadOperation)
+            queue.addOperation(uploadOperation)
+        }
+        
+        queue.addOperation(publishOperation)
+    }
+    
+    func publishByGDCBarrier(){
+        
+        var imageUrls:[String?] = images.map { _ in nil }
+        let lock = NSLock()
+        
+        let queue = DispatchQueue(label: "com.aa.bb", attributes: .concurrent)
+        
+        for (idx, img) in images.enumerated() {
+            queue.async {
+                let sem = DispatchSemaphore(value: 0)
+                upload(image: img, index: idx) { url in
+                    lock.lock()
+                    imageUrls[idx] = url
+                    lock.unlock()
+                    sem.signal()
+                }
+                sem.wait()
+            }
+        }
+        
+        queue.async(flags: .barrier) {
+            print("图片上传完毕")
+            publish(imageUrls: imageUrls.compactMap{$0}, text: "hello") { ret in
+                if ret{
+                    print("朋友圈发布成功!!")
+                }
+            }
+        }
+        
     }
     
     
@@ -83,42 +154,6 @@ class ViewController: UIViewController {
                 }
             }
         }
-    }
-
-    
-    func publishByOperation(){
-        var imageUrls:[String?] = images.map { _ in nil }
-        let lock = NSLock()
-        
-        
-        let queue = OperationQueue()
-        queue.maxConcurrentOperationCount = 5
-        
-        let publishOperation = BlockOperation {
-            print("图片上传完毕")
-            publish(imageUrls: imageUrls.compactMap{$0}, text: "hello") { ret in
-                if ret{
-                    print("朋友圈发布成功!!")
-                }
-            }
-        }
-        
-        for (idx, img) in images.enumerated() {
-            let uploadOperation = BlockOperation {
-                let sem = DispatchSemaphore(value: 0)
-                upload(image: img, index: idx) { url in
-                    lock.lock()
-                    imageUrls[idx] = url
-                    lock.unlock()
-                    sem.signal()
-                }
-                sem.wait()
-            }
-            publishOperation.addDependency(uploadOperation)
-            queue.addOperation(uploadOperation)
-        }
-        
-        queue.addOperation(publishOperation)
     }
     
     func publishByPromise(){
