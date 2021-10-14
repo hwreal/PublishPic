@@ -14,11 +14,13 @@ class ViewController: UIViewController {
     override func viewDidLoad() {
         super.viewDidLoad()
         
-        // 先并发上传20张图片到图片服务器,全部返回url后再发布朋友圈, 使用4中方式发送
+        // 先并发上传20张图片到图片服务器,全部返回url后再发布朋友圈, 使用5中方式发送
         
         //publishByGCDGroup()
         
-        publishByOperation()
+        //publishByOperation()
+       
+        publishBySemaphore()
         
         //publishByPromise()
         
@@ -47,11 +49,42 @@ class ViewController: UIViewController {
             print("图片上传完毕")
             publish(imageUrls: imageUrls.compactMap{$0}, text: "hello") { ret in
                 if ret{
-                    print("发布成功!!")
+                    print("朋友圈发布成功!!")
                 }
             }
         }
     }
+    
+    
+    func publishBySemaphore(){
+        DispatchQueue.global().async {
+            var imageUrls:[String?] = self.images.map { _ in nil }
+            let sem = DispatchSemaphore(value: 0)
+            let lock = NSLock()
+            
+            var completedUploadImageCount = 0
+            for (idx, img) in self.images.enumerated() {
+                upload(image: img, index: idx) { url in
+                    lock.lock()
+                    imageUrls[idx] = url
+                    completedUploadImageCount += 1
+                    if completedUploadImageCount == self.images.count {
+                        sem.signal()
+                    }
+                    lock.unlock()
+                }
+            }
+            
+            sem.wait()
+            print("图片上传完毕")
+            publish(imageUrls: imageUrls.compactMap{$0}, text: "hello") { ret in
+                if ret{
+                    print("朋友圈发布成功!!")
+                }
+            }
+        }
+    }
+
     
     func publishByOperation(){
         var imageUrls:[String?] = images.map { _ in nil }
@@ -65,7 +98,7 @@ class ViewController: UIViewController {
             print("图片上传完毕")
             publish(imageUrls: imageUrls.compactMap{$0}, text: "hello") { ret in
                 if ret{
-                    print("发布成功!!")
+                    print("朋友圈发布成功!!")
                 }
             }
         }
@@ -98,7 +131,7 @@ class ViewController: UIViewController {
             .flatMap { publishPromise(imageUrls: $0, text: "hello")}
             .then { ret in
                 if ret {
-                    print("发布成功!!")
+                    print("朋友圈发布成功!!")
                 }
             }
     }
@@ -124,7 +157,7 @@ class ViewController: UIViewController {
                       let str = String(data: data, encoding: .utf8)
                 else {return}
                 
-                print("发布成功!!\n\(str)")
+                print("朋友圈发布成功!!\n\(str)")
             }
         }
     }
